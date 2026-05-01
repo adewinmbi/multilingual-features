@@ -4,7 +4,7 @@ import glob
 from collections import defaultdict
 import argparse
 
-from src.utils import get_available_languages
+from src.utils import get_available_languages, model_type
 
 UD_BASE_FOLDER = "./data/universal_dependencies/"
 
@@ -78,8 +78,10 @@ def main(args):
         return
 
 
-    model_type = 'llama' if 'llama' in args.feature_dir else 'aya'
-    output_dir = os.path.join('outputs', 'probing', 'feature_intersection', model_type)
+    # infer model type from the feature_dir path component (e.g. ".../features/olmo/...")
+    dir_parts = args.feature_dir.replace("\\", "/").split("/")
+    mtype = dir_parts[-1] if dir_parts[-1] in ("llama", "aya", "olmo") else dir_parts[-2] if len(dir_parts) > 1 else "unknown"
+    output_dir = os.path.join('outputs', 'probing', 'feature_intersection', mtype)
     os.makedirs(output_dir, exist_ok=True)
 
     output_file = os.path.join(output_dir, f'shared_features_across_concepts_top_{args.k}.json')

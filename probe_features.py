@@ -12,8 +12,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from nnsight import LanguageModel
 
-from src.config import HF_TOKEN
-from src.utils import setup_model, setup_autoencoder, dict_to_json
+from src.config import HF_TOKEN, LLAMA_AE_PATH, OLMO_AE_PATH
+from src.utils import setup_model, setup_autoencoder, setup_random_model, setup_random_autoencoder, dict_to_json, model_type
 from src.probing.attribution import attribution_patching
 from src.probing.data import ProbingDataset, balance_dataset
 from src.probing.utils import get_features_and_values, concept_filter, convert_probe_to_pytorch
@@ -22,7 +22,7 @@ from src.utils import get_available_languages, get_available_concepts
 TRACER_KWARGS = {'scan': False, 'validate': False}
 LOG_DIR = 'logs'
 UD_BASE_FOLDER = "./data/universal_dependencies/"
-AYA_AE_PATH = ""
+AYA_AE_PATH = ""  # set to your Aya SAE checkpoint if using Aya
 
 # Set up logging
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -41,12 +41,21 @@ def cleanup_memory():
 
 def setup_model_and_autoencoder(model_name):
     """Set up the language model and autoencoder."""
-    model = LanguageModel(model_name, torch_dtype=torch.float16, device_map="auto", token=HF_TOKEN)
-    submodule = model.model.layers[16]
-    if "llama" in model_name:
-        autoencoder = setup_autoencoder()
+    mtype = model_type(model_name)
+    if mtype == "random":
+        model, submodule = setup_random_model()
+        autoencoder = setup_random_autoencoder()
     else:
-        autoencoder = setup_autoencoder(checkpoint_path=AYA_AE_PATH)
+        model = LanguageModel(model_name, torch_dtype=torch.float16, device_map="auto", token=HF_TOKEN)
+        submodule = model.model.layers[16]
+        if mtype == "llama":
+            autoencoder = setup_autoencoder(checkpoint_path=LLAMA_AE_PATH)
+        elif mtype == "olmo":
+            if not OLMO_AE_PATH:
+                raise ValueError("OLMO_AE_PATH is not set in src/config.py. Provide a path to a trained OLMo-7B SAE.")
+            autoencoder = setup_autoencoder(checkpoint_path=OLMO_AE_PATH)
+        else:
+            autoencoder = setup_autoencoder(checkpoint_path=AYA_AE_PATH)
     print(f"Autoencoder dictionary size: {autoencoder.dict_size}")
     return model, submodule, autoencoder
 
@@ -164,8 +173,9 @@ def feature_selection(args):
     """Main function for feature selection across concepts and languages."""
     model, submodule, autoencoder = setup_model_and_autoencoder(args.model_name)
     
-    probe_dir = f"outputs/probing/probes/{'llama' if 'llama' in args.model_name else 'aya'}"
-    output_dir = f"outputs/probing/features/{'llama' if 'llama' in args.model_name else 'aya'}"
+    mtype = model_type(args.model_name)
+    probe_dir = f"outputs/probing/probes/{mtype}"
+    output_dir = f"outputs/probing/features/{mtype}"
     print(f"Probe directory: {probe_dir}")
     print(f"Output directory: {output_dir}")
 

@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.config import HF_TOKEN
-from src.probing.utils import extract_activations, concept_filter, get_available_languages, get_features_and_values
+from src.utils import model_type, setup_random_model, get_available_languages
+from src.probing.utils import extract_activations, concept_filter, get_features_and_values
 from src.probing.data import ProbingDataset, balance_dataset
 
 # Constants
@@ -28,6 +29,9 @@ logging.basicConfig(filename=os.path.join(LOG_DIR, 'probing.txt'),
 
 def setup_model(model_name):
     """Initialize and return the language model."""
+    if model_name == "random":
+        model, _ = setup_random_model()
+        return model
     return LanguageModel(model_name, torch_dtype=torch.float16, device_map="auto", token=HF_TOKEN)
 
 def get_ud_filepaths(language):
@@ -79,7 +83,7 @@ def process_language(args, language):
 
     features = get_features_and_values(train_filepath)
 
-    output_dir = f"outputs/probing/probes/{'llama' if 'llama' in args.model_name else 'aya'}"
+    output_dir = f"outputs/probing/probes/{model_type(args.model_name)}"
     for concept_key, values in features.items():
         for concept_value in values:
             print(f"\nProcessing {language} - {concept_key}: {concept_value}")

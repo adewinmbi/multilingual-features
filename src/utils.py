@@ -1,30 +1,43 @@
 import os
 import json
-import logging 
+import logging
 from sklearn.utils import resample
 import pyconll
 import torch
 import glob
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from nnsight import LanguageModel
 from torch.utils.data import Dataset
 from src.autoencoder import GatedAutoEncoder
 import numpy as np
-from src.config import HF_TOKEN
+from src.config import HF_TOKEN, LLAMA_AE_PATH, OLMO_AE_PATH, RANDOM_MODEL_BASE, RANDOM_SAE_ACTIVATION_DIM, RANDOM_SAE_DICT_SIZE
 from collections import defaultdict
 
 
+def model_type(model_name: str) -> str:
+    name = model_name.lower()
+    if name == "random":
+        return "random"
+    if "llama" in name:
+        return "llama"
+    if "aya" in name:
+        return "aya"
+    if "olmo" in name:
+        return "olmo"
+    return "unknown"
+
+
 def setup_model(model_name_or_path="meta-llama/Meta-Llama-3-8B", device="auto", torch_dtype=torch.float16):
-    
+
     config = AutoConfig.from_pretrained(model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(
-        model_name_or_path, 
-        config=config, 
+        model_name_or_path,
+        config=config,
         padding_side="left",
         token=HF_TOKEN
     )
     tokenizer.pad_token = tokenizer.eos_token
-    
+
     model = LanguageModel(
         model_name_or_path,
         tokenizer=tokenizer,
@@ -33,14 +46,35 @@ def setup_model(model_name_or_path="meta-llama/Meta-Llama-3-8B", device="auto", 
         token=HF_TOKEN
     )
     submodule = model.model.layers[16]
-    
+
     return model, submodule
 
 
-def setup_autoencoder(checkpoint_path="./checkpoints/autoencoder.pt", device="cuda"):
-    dict = GatedAutoEncoder.from_pretrained(checkpoint_path)
-    dict.to(device)
-    return dict
+def setup_autoencoder(checkpoint_path=None, device="cuda"):
+    if checkpoint_path is None:
+        checkpoint_path = LLAMA_AE_PATH
+    ae = GatedAutoEncoder.from_pretrained(checkpoint_path)
+    ae.to(device)
+    return ae
+
+
+def setup_random_model(device="cuda", torch_dtype=torch.float16):
+    """Randomly initialized model using RANDOM_MODEL_BASE architecture (no pretrained weights)."""
+    config = AutoConfig.from_pretrained(RANDOM_MODEL_BASE, token=HF_TOKEN)
+    raw_model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+    raw_model.to(device)
+    tokenizer = AutoTokenizer.from_pretrained(RANDOM_MODEL_BASE, token=HF_TOKEN, padding_side="left")
+    tokenizer.pad_token = tokenizer.eos_token
+    model = LanguageModel(raw_model, tokenizer=tokenizer)
+    submodule = model.model.layers[16]
+    return model, submodule
+
+
+def setup_random_autoencoder(device="cuda"):
+    """Randomly initialized SAE with dimensions matching RANDOM_MODEL_BASE."""
+    ae = GatedAutoEncoder(RANDOM_SAE_ACTIVATION_DIM, RANDOM_SAE_DICT_SIZE)
+    ae.to(device)
+    return ae
 
 
 def get_template_names(template_dir = "./data/templates") -> list[str]:
